@@ -21,7 +21,7 @@ def lip_dist(top_point, bott_point):
     return dist
     
 
-def min_max_stress_scaler(dist_eb, points_eyebrow, dist_mouth, points_mouth):
+def min_max_stress_scaler(dist_eb, dist_mouth):
     norm_eb_dist = abs(dist_eb) 
     log_eb_dist = np.log10(norm_eb_dist)
     norm_mouth_dist = abs(dist_mouth) 
@@ -86,13 +86,13 @@ while True:
         eb_distance = eyebrow_dist(left_eb_hull[-1].flatten(), right_eb_hull[-1].flatten())
 
         # calculate stress-level
-        label_stress, value_stress = min_max_stress_scaler(eb_distance, eyebrow_points, lip_distance, mouth_points)
+        label_stress, value_stress = min_max_stress_scaler(eb_distance, lip_distance)
 
         if pd.isna(value_stress * 100) == True:
             continue
 
         # picture text parameters
-        text_one = f"Stress value: {str(value_stress * 100)}"
+        text_one = f"Stress value: {str(round(value_stress * 100, 2))}"
         origin_one = (10, 40)
         text_two = f"Stress level: {label_stress}"
         origin_two = (10, 60)
