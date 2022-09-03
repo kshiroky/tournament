@@ -22,9 +22,11 @@ def lip_dist(top_point, bott_point):
     
 
 def min_max_stress_scaler(dist_eb, points_eyebrow, dist_mouth, points_mouth):
-    norm_eb_dist = abs(dist_eb - min(points_eyebrow)) / abs(max(points_eyebrow) - min(points_eyebrow))
-    norm_mouth_dist = abs(dist_mouth - min(mouth_points)) / abs(max(points_mouth) - min(points_mouth))
-    pre_stress_value = (norm_eb_dist + norm_mouth_dist) / 2
+    norm_eb_dist = abs(dist_eb) 
+    log_eb_dist = np.log10(norm_eb_dist)
+    norm_mouth_dist = abs(dist_mouth) 
+    log_mouth_dist = np.log10(norm_mouth_dist)
+    pre_stress_value = (log_eb_dist + log_mouth_dist) / 2
     stress_value = np.exp(-(pre_stress_value))
     if stress_value > 0.5:
         stress_label = "Stressed"
@@ -69,6 +71,7 @@ while True:
         left_eb_hull = cv2.convexHull(left_eb)
         right_eb_hull = cv2.convexHull(right_eb)
         mouth_hull = cv2.convexHull(mouth)
+       
 
         # display the convexed landmarks
         cv2.drawContours(image, [left_eb_hull], -1, (0, 255, 0), 1)
@@ -80,11 +83,11 @@ while True:
         mouth_points = []
         eyebrow_points = []
         lip_distance = lip_dist(mouth_hull[-1], mouth_hull[0])
-        eb_distance = eyebrow_dist(left_eb_hull, right_eb_hull)
+        eb_distance = eyebrow_dist(left_eb_hull[-1].flatten(), right_eb_hull[-1].flatten())
 
         # calculate stress-level
         label_stress, value_stress = min_max_stress_scaler(eb_distance, eyebrow_points, lip_distance, mouth_points)
-        
+
         if pd.isna(value_stress * 100) == True:
             continue
 
@@ -94,10 +97,11 @@ while True:
         text_two = f"Stress level: {label_stress}"
         origin_two = (10, 60)
         font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(image, text_one, origin_one, font, 0.5, (0, 255, 0), 2)
-        cv2.putText(image, text_two, origin_two, font, 0.5, (0, 255, 0), 2)
-    # display the image zz
-    cv2.imshow("Landmark Detection", image)
+        cv2.putText(image, text_one, origin_one, font, 0.5, (0, 0, 255), 2)
+        cv2.putText(image, text_two, origin_two, font, 0.5, (0, 0, 255), 2)
+        
+    # # display the image zz
+    cv2.imshow("Stress Level Detection", image)
     
 
     # press Esc to terminate the session
