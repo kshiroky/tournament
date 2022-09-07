@@ -1,3 +1,4 @@
+from multiprocessing.connection import answer_challenge
 import cv2
 import dlib
 import numpy as np
@@ -5,9 +6,6 @@ import pandas as pd
 import imutils
 from imutils import face_utils
 from scipy.spatial import distance
-
-
-
 
 def eyebrow_dist(left_eb, right_eb):
     dist = distance.euclidean(left_eb, right_eb)
@@ -22,6 +20,7 @@ def lip_dist(top_point, bott_point):
     
 
 def min_max_stress_scaler(dist_eb, dist_mouth):
+    # quiz_result = process_quiz_answers(answer_list=answer_list)
     norm_eb_dist = abs(dist_eb) 
     log_eb_dist = np.log10(norm_eb_dist)
     norm_mouth_dist = abs(dist_mouth) 
@@ -33,6 +32,49 @@ def min_max_stress_scaler(dist_eb, dist_mouth):
     else:
         stress_label = "Not stressed"
     return stress_label, stress_value
+
+
+def process_quiz_answers(answer_list):
+    num_answ = len(answer_list)
+    norm_answer_value = 0
+    for answer in answer_list:
+        norm_value = int(answer) / num_answ
+        norm_answer_value += norm_value
+    return norm_answer_value
+
+#  
+answer_list = []
+
+question_1 = int(input("Сколько часов вы сегодня спали? \n Введите число от 0 до 12: \n"))
+if int(question_1) <= 9: 
+    answer_1 = question_1 / 9 
+if question_1 > 9:
+    answer_1 = question_1 / 9 - (question_1 - 9) / 9
+answer_list.append(answer_1)
+
+question_2 = int(input("Оцените свое самочувствие по шкале от 1 до 5: \n"))
+answer_2 = question_2 / 5
+answer_list.append(answer_2)
+
+
+print("Оцените свое самочувствие:")
+question_3 = input("Были ли у вас сегодня конфликты или споры (да/нет)?\n")
+if "да" in question_3:
+    answer_3 = 1
+elif "нет" in question_3:
+    answer_3 = 0
+answer_list.append(answer_3)
+
+question_4 = int(input("Как часто вы дотрагиваетесь до своего лица (от 0 до 7), \n где 0 - совсем не дотрагивались, 7 - очень часто касаетесь:\n "))
+answer_4 = question_4 / 7
+answer_list.append(answer_4)
+
+
+question_5 = int(input("Сколько чашек кофе вы сегодня выпили?"))
+if question_5 == 0 is False:
+    answer_5 = question_5 / max(question_5)
+answer_list.append(answer_5)
+
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
