@@ -27,9 +27,24 @@ dataset_root = os.path.join(os.getcwd(), "datasets")
 # create subfolders for noise and sounds of watermelon bumping
 audio_subfolder = "audio"
 noise_subfolder = "noise"
+train_image_path = "train_images"
+valid_image_path = "valid_images"
 
 dataset_audio_path = os.path.join(dataset_root, audio_subfolder)
 dataset_noise_path = os.path.join(dataset_root, noise_subfolder)
+
+dataset_train_image_path = os.join(dataset_root, train_image_path)
+dataset_valid_image_path = os.joint(dataset_root, valid_image_path)
+
+
+# check if directories exist, otherwise, create them
+for direct in [audio_subfolder, noise_subfolder, train_image_path, valid_image_path]:
+    if direct in os.listdir(dataset_root):
+        continue
+    else:
+        os.mkdir(os.path.join(dataset_root, direct))
+     
+
 
 # percentage of validation samples
 valid_splt = 0.2
@@ -234,14 +249,78 @@ def residual_block(x, filters, conv_num=3, activation="relu"):
     return keras.layers.MaxPool1D(pool_size=2, strides=2)(x)
 
 
-def cnn_block(image_tensor, input_shape):
+train_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
+valid_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+    dataset_train_image_path, target_size=(300, 300), batch_size=20,
+    class_mode="binary")
+
+valid_generator = valid_datagen.flow_from_directory(
+    dataset_valid_image_path, target_size=(300, 300), batch_size=20,
+    class_mode="binary")
+
+
+
+
+
+
+def cnn_block():
     """Load pre-trained Xception model to process the watermelons images"""
     xception_model = keras.applications.Xception(
         include_top=False,
-        weights="imagenet"
+        weights="imagenet",
+        input_shape=(150, 150, 3)  
     )
     xception_model.trainable = False
+    return xception_model
 
 
-def build_model(input_shape):
+def build_model(audio_input_shape, image_input_shape=(150, 150, 3)):
     """Builds the model applying to the data"""
+    audio_input = keras.layers.Input(shape=audio_input_shape, name="audio_input")
+    image_input = keras.layers.Input(shape=image_input_shape)
+    
+    audio_x = residual_block(audio_input, 16, 2)
+    audio_x = residual_block(audio_input, 32, 2)
+    audio_x = residual_block(audio_input, 64, 3)
+    audio_x = residual_block(audio_input, 128, 3)
+    audio_x = residual_block(audio_input, 128, 3)
+    
+    audio_x = keras.layers.AveragePooling1D(pool_size=3, strides=3)(audio_x)
+    audio_x = keras.layers.Flatten()(audio_x)
+    audio_x = keras.layers.Dense(256, activation="relu")(audio_x)
+    audio_x = keras.layers.Dense(128, activation="relu")(audio_x)
+
+    image_x = cnn_block()(image_input)
+
+    final_x = keras.layers.Add()([audio_x, image_x])
+    output = keras.layers.Dense(1, activation="sigmoid", name="output")(final_x)
+
+    return keras.models.Model(inputs=[audio_input, image_input], output=output)
+
+model = build_model(audio_input_shape=(sampling_rate // 2, 1))
+
+print(model.summary())
+
+# compile the model
+model.compile(
+    optimizer="Adam", loss="binary_crossentropy", metrics=["accuracy"]
+)
+
+# add callbacks:
+# EarlyStopping to prevent over-fitting
+# ModelCheckPoint to keep the model with the best accuracy
+
+model_save_filename = "watermodel.h5"
+
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+model_checkpoint_cb = keras.callbacks.ModelCheckpoint(
+    model_save_filename, monitor="val_accuracy", save_best_only=True
+)
+
+history = model.fit(train_ds, epochs=epochs,
+    validation_data=valid_ds, 
+    callbacks=[early_stopping_cb, model_checkpoint_cb])
+
+print(model.evaluate(valid_ds))
