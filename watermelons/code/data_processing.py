@@ -3,8 +3,6 @@ import numpy as np
 import tensorflow as tf
 from pathlib import Path
 from tensorflow import keras
-from camera import image_creator
-from audio_record import recorder
 
 """Block of the functions used"""
 
@@ -54,6 +52,7 @@ def path_to_image(path):
     image = tf.io.read_file(path)
     image, _ = tf.image.decode_image(image, 3, dtype="int32")
     image = tf.image.resize(image, (150, 150))
+    image = image / tf.constant(255, dtype=tf.float32)
     return image
 
 def add_noise(audio, noises=None, scale=0.5):
@@ -151,14 +150,18 @@ dataset_audio_path = os.path.join(dataset_root, audio_subdir)
 dataset_noise_path = os.path.join(dataset_root, noise_subdir)
 dataset_image_path = os.join(dataset_root, image_subdir)
 
+user_audio_path = os.join(dataset_root, "user/audio")
+user_image_path = os.join(dataset_root, "user/images")
+
 
 # check if directories exist, otherwise, create them
-for direct in [audio_subdir, noise_subdir, image_subdir]:
+for direct in [audio_subdir, noise_subdir, image_subdir, user_audio_path, user_image_path]:
     if direct in os.listdir(dataset_root):
         continue
     else:
         os.mkdir(os.path.join(dataset_root, direct))
      
+
 
 
 # create directories for training and valdition images

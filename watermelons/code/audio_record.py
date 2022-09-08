@@ -12,5 +12,5 @@ def recorder(path_to_dir, label):
             samplerate=freq, channels=2)
     sd.wait()
     num_of_image = len(os.listdir(path_to_dir))
-    write(os.path.join(path_to_dir, f"{label}_recording{num_of_image}.wav)"), freq, recording)
+    write(os.path.join(path_to_dir, f"recording{num_of_image}.wav)"), freq, recording)
     return None
