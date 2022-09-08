@@ -1,4 +1,3 @@
-
 """Source code: https://keras.io/examples/audio/speaker_recognition_using_cnn/"""
 
 
@@ -25,25 +24,37 @@ from IPython.display import display, Audio
 dataset_root = os.path.join(os.getcwd(), "datasets")
 
 # create subfolders for noise and sounds of watermelon bumping
-audio_subfolder = "audio"
-noise_subfolder = "noise"
-train_image_path = "train_images"
-valid_image_path = "valid_images"
+audio_subdir = "audio"
+noise_subdir = "noise"
+image_subdir = "images"
 
-dataset_audio_path = os.path.join(dataset_root, audio_subfolder)
-dataset_noise_path = os.path.join(dataset_root, noise_subfolder)
-
-dataset_train_image_path = os.join(dataset_root, train_image_path)
-dataset_valid_image_path = os.joint(dataset_root, valid_image_path)
+dataset_audio_path = os.path.join(dataset_root, audio_subdir)
+dataset_noise_path = os.path.join(dataset_root, noise_subdir)
+dataset_image_path = os.join(dataset_root, image_subdir)
 
 
 # check if directories exist, otherwise, create them
-for direct in [audio_subfolder, noise_subfolder, train_image_path, valid_image_path]:
+for direct in [audio_subdir, noise_subdir, image_subdir]:
     if direct in os.listdir(dataset_root):
         continue
     else:
         os.mkdir(os.path.join(dataset_root, direct))
      
+
+
+# create directories for training and valdition images
+
+# FOR NOW WE WILL NOT USE THIS
+
+# train_imgs = "train_images"
+# valid_imgs = "valid_images"
+# train_image_path = os.path.join(dataset_image_path, train_imgs)
+# valid_image_path = os.path.join(dataset_image_path, valid_imgs)
+
+# for direct in [train_image_path, valid_image_path]:
+#     if os.path.exists(direct) is False:
+#         os.mkdir(direct)
+
 
 
 # percentage of validation samples
@@ -94,8 +105,12 @@ command = (
 
 os.system(command)
 
-# Split noise into chunks of 16000 each
+
+"""Block of the functions used"""
+
+
 def load_noise_sample(path):
+    """Splits noise into chunks of 16000 each"""
     sample, sampling_rate = tf.audio.decode_wav(
         tf.io.read_file(path), desired_channels=1
     )
@@ -109,26 +124,23 @@ def load_noise_sample(path):
         return None
 
 
-noises = []
-for path in noise_paths:
-    sample = load_noise_sample(path)
-    if sample:
-        noises.extend(sample)
-noises = tf.stack(noises)
-
-print(
-    "{} noise files were split into {} noise samples where each is {} sec. long".format(
-        len(noise_paths), noises.shape[0], noises.shape[1] // sampling_rate
-    )
-)
-
-# dataset generation
 def paths_and_labels_to_dataset(audio_paths, labels):
-    """Constructs a dataset of audios and labels"""
+    """Constructs the dataset of audios and labels"""
+
     path_ds = tf.data.Dataset.from_tensor_slices(audio_paths)
     audio_ds = path_ds.map(lambda x: path_to_audio(x))
     label_ds = tf.data.Dataset.from_tensor_slices(labels)
     return tf.data.Dataset.zip((audio_ds, label_ds))
+
+
+def image_dir_to_dataset(image_paths, labels):
+    """Constructs the dataset of image tensors and labels"""
+
+    path_ds = tf.data.Dataset.from_tensor_slices(image_paths)
+    image_ds = path_ds.map(lambda x: path_to_image(x))
+    label_ds = tf.data.Dataset.from_tensor_slices(labels)
+    return tf.Dataset.zip((image_ds, label_ds))
+
 
 
 def path_to_audio(path):
@@ -173,26 +185,89 @@ def audio_to_fft(audio):
     return tf.math.abs(fft[:, : (audio.shape[1] // 2), :])
 
 
+def residual_block(x, filters, conv_num=3, activation="relu"):
+    """Constructs the block of 1D-convolution layers with residual memory"""
+
+    conv0 = keras.layers.Conv1D(filters, 1, padding="same")(x)
+    for layer in range(conv_num - 1):
+        x = keras.layers.Conv1D(filters, 3, padding="same")(x)
+        x = keras.layers.Activation(activation)(x)
+    x = keras.layers.Conv1D(filters, 3, padding="same")(x)
+    x = keras.layers.Add()([x, conv0])
+    x = keras.layers.Activation(activation)(x)
+    return keras.layers.MaxPool1D(pool_size=2, strides=2)(x)
+
+
+def cnn_block():
+    """Load pre-trained Xception model to process the watermelons images"""
+    xception_model = keras.applications.Xception(
+        include_top=False,
+        weights="imagenet",
+        input_shape=(150, 150, 3)  
+    )
+    xception_model.trainable = False
+    return xception_model
+
+
+def build_model(audio_input_shape, image_input_shape=(150, 150, 3)):
+    """Builds the model applying to the data"""
+    audio_input = keras.layers.Input(shape=audio_input_shape, name="audio_input")
+    image_input = keras.layers.Input(shape=image_input_shape)
+    
+    audio_x = residual_block(audio_input, 16, 2)
+    audio_x = residual_block(audio_input, 32, 2)
+    audio_x = residual_block(audio_input, 64, 3)
+    audio_x = residual_block(audio_input, 128, 3)
+    audio_x = residual_block(audio_input, 128, 3)
+    
+    audio_x = keras.layers.AveragePooling1D(pool_size=3, strides=3)(audio_x)
+    audio_x = keras.layers.Flatten()(audio_x)
+    audio_x = keras.layers.Dense(256, activation="relu")(audio_x)
+    audio_x = keras.layers.Dense(128, activation="relu")(audio_x)
+
+    image_x = cnn_block()(image_input)
+
+    final_x = keras.layers.Add()([audio_x, image_x])
+    output = keras.layers.Dense(1, activation="sigmoid", name="output")(final_x)
+
+    return keras.models.Model(inputs=[audio_input, image_input], output=output)
+
+
+"""Preparation of the data"""
+
+noises = []
+for path in noise_paths:
+    sample = load_noise_sample(path)
+    if sample:
+        noises.extend(sample)
+noises = tf.stack(noises)
+
+print(
+    "{} noise files were split into {} noise samples where each is {} sec. long".format(
+        len(noise_paths), noises.shape[0], noises.shape[1] // sampling_rate
+    )
+)
+
+
 # get the list of audio file paths along with their corresponding labels
 # at the moment we use binary classification {"ripe": 1, "green": 0}
 
-audio_labels = dict()
+audio_files = []
+image_files = []
+labels = []
 ripe_number, green_number = 0, 0
 for filename in os.listdir(dataset_audio_path):
     if "ripe" in filename:
-        audio_labels[filename] = 1
+        audio_files.append(filename)
         ripe_number += 1
     elif "green" in filename:
-        audio_labels[filename] = 0
+         
         green_number += 1
 
 print(f"There are {green_number} green watermelon recordings \n and {ripe_number} ripe watermelon recordings")
 
 
 # shuffle data
-audio_files = audio_labels.keys()
-labels = audio_files.values()
-
 rng = np.random.RandomState(random_seed)
 rng.shuffle(audio_files)
 rng = np.random.RandomState(random_seed)
@@ -236,68 +311,22 @@ valid_ds = valid_ds.map(
 valid_ds = valid_ds.prefetch(tf.data.AUTOTUNE)
 
 
-def residual_block(x, filters, conv_num=3, activation="relu"):
-    """Constructs the block of 1D-convolution layers with residual memory"""
-
-    conv0 = keras.layers.Conv1D(filters, 1, padding="same")(x)
-    for layer in range(conv_num - 1):
-        x = keras.layers.Conv1D(filters, 3, padding="same")(x)
-        x = keras.layers.Activation(activation)(x)
-    x = keras.layers.Conv1D(filters, 3, padding="same")(x)
-    x = keras.layers.Add()([x, conv0])
-    x = keras.layers.Activation(activation)(x)
-    return keras.layers.MaxPool1D(pool_size=2, strides=2)(x)
-
-
-train_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
-valid_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
-
-train_generator = train_datagen.flow_from_directory(
-    dataset_train_image_path, target_size=(300, 300), batch_size=20,
-    class_mode="binary")
-
-valid_generator = valid_datagen.flow_from_directory(
-    dataset_valid_image_path, target_size=(300, 300), batch_size=20,
-    class_mode="binary")
 
 
 
+# train_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
+# valid_datagen = keras.preprocessing.ImageDataGenerator(rescale=1./255)
+
+# train_generator = train_datagen.flow_from_directory(
+#     dataset_train_image_path, target_size=(300, 300), batch_size=20,
+#     class_mode="binary")
+
+# valid_generator = valid_datagen.flow_from_directory(
+#     dataset_valid_image_path, target_size=(300, 300), batch_size=20,
+#     class_mode="binary")
 
 
-
-def cnn_block():
-    """Load pre-trained Xception model to process the watermelons images"""
-    xception_model = keras.applications.Xception(
-        include_top=False,
-        weights="imagenet",
-        input_shape=(150, 150, 3)  
-    )
-    xception_model.trainable = False
-    return xception_model
-
-
-def build_model(audio_input_shape, image_input_shape=(150, 150, 3)):
-    """Builds the model applying to the data"""
-    audio_input = keras.layers.Input(shape=audio_input_shape, name="audio_input")
-    image_input = keras.layers.Input(shape=image_input_shape)
-    
-    audio_x = residual_block(audio_input, 16, 2)
-    audio_x = residual_block(audio_input, 32, 2)
-    audio_x = residual_block(audio_input, 64, 3)
-    audio_x = residual_block(audio_input, 128, 3)
-    audio_x = residual_block(audio_input, 128, 3)
-    
-    audio_x = keras.layers.AveragePooling1D(pool_size=3, strides=3)(audio_x)
-    audio_x = keras.layers.Flatten()(audio_x)
-    audio_x = keras.layers.Dense(256, activation="relu")(audio_x)
-    audio_x = keras.layers.Dense(128, activation="relu")(audio_x)
-
-    image_x = cnn_block()(image_input)
-
-    final_x = keras.layers.Add()([audio_x, image_x])
-    output = keras.layers.Dense(1, activation="sigmoid", name="output")(final_x)
-
-    return keras.models.Model(inputs=[audio_input, image_input], output=output)
+"""Building the model"""
 
 model = build_model(audio_input_shape=(sampling_rate // 2, 1))
 
